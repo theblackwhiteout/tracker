@@ -336,7 +336,7 @@ app.get("/api/western/home", async (req, res) => {
       try {
         const ai = getGemini();
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-2.5-flash",
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -620,7 +620,7 @@ Identify up to 5 real, popular movies/TV shows matching this query. You must ret
 Provide the estimated total units (e.g., total episodes for TV, or runtime string as an integer like 120 (mins) for movie).`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: promptMessage,
       config: {
         responseMimeType: "application/json",
@@ -954,7 +954,7 @@ app.post("/api/gemini/recommendations", async (req, res) => {
 Give a specific "why" rationale for why this item fits their specific interests. Output precisely matching the JSON schema.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: promptMessage,
       config: {
         responseMimeType: "application/json",
@@ -1056,7 +1056,7 @@ You must include real facts:
 Output precisely according to the required responseSchema JSON structure.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: promptMessage,
       config: {
         responseMimeType: "application/json",
