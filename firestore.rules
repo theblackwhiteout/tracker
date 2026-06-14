@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- PHASE 3: Global Security Primitives ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- PHASE 4: Validation Blueprints ---
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['userId', 'username', 'avatarUrl', 'role', 'updatedAt'])
+        && data.keys().size() == 5
+        && data.userId == request.auth.uid
+        && data.username is string && data.username.size() >= 2 && data.username.size() <= 40
+        && data.avatarUrl is string && data.avatarUrl.size() <= 1000
+        && data.role == 'standard' // Prevent privilege escalation
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWatchlistItem(data) {
+      return data.keys().hasAll(['id', 'userId', 'mediaId', 'mediaType', 'title', 'coverImage', 'status', 'progress', 'totalUnits', 'rating', 'notes', 'updatedAt'])
+        && data.keys().size() == 12
+        && data.userId == request.auth.uid
+        && data.id is string && data.id.size() <= 200
+        && data.mediaId is string && data.mediaId.size() <= 80
+        && data.mediaType is string && (data.mediaType == 'anime' || data.mediaType == 'manga' || data.mediaType == 'movie' || data.mediaType == 'tv')
+        && data.title is string && data.title.size() <= 200
+        && data.coverImage is string && data.coverImage.size() <= 500
+        && data.status is string && (data.status == 'planning' || data.status == 'current' || data.status == 'completed' || data.status == 'paused' || data.status == 'dropped')
+        && data.progress is int && data.progress >= 0 && data.progress <= 50000
+        && data.totalUnits is int && data.totalUnits >= 0 && data.totalUnits <= 50000
+        && data.rating is int && data.rating >= 0 && data.rating <= 10
+        && data.notes is string && data.notes.size() <= 4000
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCommunityReview(data) {
+      return data.keys().hasAll(['id', 'userId', 'username', 'userAvatar', 'mediaId', 'mediaType', 'mediaTitle', 'rating', 'content', 'likesCount', 'updatedAt'])
+        && data.keys().size() == 11
+        && data.userId == request.auth.uid
+        && data.id is string && data.id.size() <= 128
+        && data.username is string && data.username.size() <= 40
+        && data.userAvatar is string && data.userAvatar.size() <= 500
+        && data.mediaId is string && data.mediaId.size() <= 80
+        && data.mediaType is string && (data.mediaType == 'anime' || data.mediaType == 'manga' || data.mediaType == 'movie' || data.mediaType == 'tv')
+        && data.mediaTitle is string && data.mediaTitle.size() <= 200
+        && data.rating is int && data.rating >= 1 && data.rating <= 10
+        && data.content is string && data.content.size() >= 10 && data.content.size() <= 8000
+        && data.likesCount is int && data.likesCount >= 0
+        && data.updatedAt is timestamp;
+    }
+
+    // --- COLLECTION RULES ---
+
+    // 1. Users Collection
+    match /users/{userId} {
+      // Profiles are publicly legible so community posts can map names
+      allow read, get: if isSignedIn();
+      allow create: if isSignedIn() && isOwner(userId) && isValidUserProfile(incoming()) && incoming().updatedAt == request.time;
+      allow update: if isSignedIn() && isOwner(userId) && isValidUserProfile(incoming()) && incoming().updatedAt == request.time;
+    }
+
+    // 2. Watchlist Collection
+    match /watchlist/{watchId} {
+      // Secure List Query: Require queries to explicitly filter by private userId
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() 
+        && isValidId(watchId)
+        && isValidWatchlistItem(incoming())
+        && watchId == request.auth.uid + "_" + incoming().mediaType + "_" + incoming().mediaId
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(watchId)
+        && existing().userId == request.auth.uid
+        && isValidWatchlistItem(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().id == existing().id
+        && incoming().mediaId == existing().mediaId
+        && incoming().mediaType == existing().mediaType; // Keep core immutable fields unchanged
+    }
+
+    // 3. Community Reviews Collection
+    match /reviews/{reviewId} {
+      allow read, list, get: if true; // Reviews can be read by anyone (public feed)
+      
+      allow create: if isSignedIn()
+        && isValidId(reviewId)
+        && isValidCommunityReview(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow delete: if isSignedIn()
+        && existing().userId == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && isValidId(reviewId)
+        && (
+          // Action: Edit Review (by owner)
+          (existing().userId == request.auth.uid
+            && isValidCommunityReview(incoming())
+            && incoming().updatedAt == request.time
+            && incoming().id == existing().id
+            && incoming().mediaId == existing().mediaId
+            && incoming().mediaType == existing().mediaType
+            && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'rating', 'likesCount', 'updatedAt']))
+          ||
+          // Action: Like Review (by anyone signed in)
+          (incoming().diff(existing()).affectedKeys().hasOnly(['likesCount'])
+            && incoming().likesCount == existing().likesCount + 1)
+        );
+    }
+  }
+}

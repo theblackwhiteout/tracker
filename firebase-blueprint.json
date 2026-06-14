@@ -1,0 +1,156 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile data for global display",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique user ID"
+        },
+        "username": {
+          "type": "string",
+          "description": "User's display name"
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Avatar URL"
+        },
+        "role": {
+          "type": "string",
+          "description": "User role, defaults to standard"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "username"]
+    },
+    "WatchlistItem": {
+      "title": "WatchlistItem",
+      "description": "Tracking record for an anime, manga, movie, or TV show",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Document ID (userId_mediaType_mediaId)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner's user ID"
+        },
+        "mediaId": {
+          "type": "string",
+          "description": "ID of the media from external provider"
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["anime", "manga", "movie", "tv"],
+          "description": "Type of tracked media"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the media"
+        },
+        "coverImage": {
+          "type": "string",
+          "description": "Image URL for display"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["planning", "current", "completed", "paused", "dropped"],
+          "description": "Watching or reading status"
+        },
+        "progress": {
+          "type": "integer",
+          "description": "Current episode or chapter number"
+        },
+        "totalUnits": {
+          "type": "integer",
+          "description": "Total chapters/episodes (0 if unknown)"
+        },
+        "rating": {
+          "type": "integer",
+          "description": "User rating from 1 to 10"
+        },
+        "notes": {
+          "type": "string",
+          "description": "User's private notes for this item"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "mediaId", "mediaType", "title", "status", "progress"]
+    },
+    "CommunityReview": {
+      "title": "CommunityReview",
+      "description": "Community review written by a user",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique review ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Author user ID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Author's display name"
+        },
+        "userAvatar": {
+          "type": "string",
+          "description": "Author's avatar URL"
+        },
+        "mediaId": {
+          "type": "string",
+          "description": "Target media ID"
+        },
+        "mediaType": {
+          "type": "string",
+          "description": "Target media type"
+        },
+        "mediaTitle": {
+          "type": "string",
+          "description": "Target media name"
+        },
+        "rating": {
+          "type": "integer",
+          "description": "User score from 1 to 10"
+        },
+        "content": {
+          "type": "string",
+          "description": "Review content text"
+        },
+        "likesCount": {
+          "type": "integer",
+          "description": "Total helpful likes"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "username", "mediaId", "mediaType", "mediaTitle", "content", "likesCount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User public profiles"
+    },
+    "/watchlist/{watchId}": {
+      "schema": "WatchlistItem",
+      "description": "Watchlist items synchronized globally"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "CommunityReview",
+      "description": "Reviews shared by the community"
+    }
+  }
+}
