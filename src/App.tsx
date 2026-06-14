@@ -41,8 +41,9 @@ import AIRecommendations from "./components/AIRecommendations";
 import CommunityReviewsBlock from "./components/CommunityReviewsBlock";
 import MediaDetailsView from "./components/MediaDetailsView";
 import HomeBlock from "./components/HomeBlock";
+import UserProfileBlock from "./components/UserProfileBlock";
 
-type ActiveTab = "home" | "watchlist" | "discover" | "calendar" | "reviews";
+type ActiveTab = "home" | "watchlist" | "discover" | "calendar" | "reviews" | "profile";
 type GlobalCategory = "all" | "otaku" | "western";
 
 export default function App() {
@@ -51,10 +52,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
   const [lastSearchTab, setLastSearchTab] = useState<"discover" | "watchlist" | "calendar" | "reviews">("discover");
 
-  // Keep lastSearchTab in sync with any active non-home tab
+  // Keep lastSearchTab in sync with any active non-home, non-profile tab
   useEffect(() => {
-    if (activeTab !== "home") {
-      setLastSearchTab(activeTab);
+    if (activeTab !== "home" && activeTab !== "profile") {
+      setLastSearchTab(activeTab as any);
     }
   }, [activeTab]);
   
@@ -176,6 +177,59 @@ export default function App() {
     }
   };
 
+  const handleImportWatchlist = async (importedItems: any[]) => {
+    if (!currentUser) return;
+
+    const formattedItems: WatchlistItem[] = importedItems.map((item, index) => {
+      const mediaId = item.mediaId || `import_${Date.now()}_${index}`;
+      const itemId = `${currentUser.uid}_${item.mediaType || "anime"}_${mediaId}`;
+      const defaultCover = `https://placehold.co/300x450/0f172a/3b82f6?text=${encodeURIComponent(item.title)}`;
+      return {
+        id: itemId,
+        userId: currentUser.uid,
+        mediaId: mediaId,
+        mediaType: item.mediaType || "anime",
+        title: item.title,
+        coverImage: item.coverImage || defaultCover,
+        status: item.status || "planning",
+        progress: Number(item.progress) || 0,
+        totalUnits: Number(item.totalUnits) || 0,
+        rating: Number(item.rating) || 0,
+        notes: item.notes || "",
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    setWatchlist(prev => {
+      const merged = [...prev];
+      for (const newItem of formattedItems) {
+        const dupIdx = merged.findIndex(i => i.mediaId === newItem.mediaId && i.mediaType === newItem.mediaType);
+        if (dupIdx >= 0) {
+          merged[dupIdx] = {
+            ...merged[dupIdx],
+            status: newItem.status,
+            progress: Math.max(merged[dupIdx].progress, newItem.progress),
+            rating: newItem.rating || merged[dupIdx].rating,
+            notes: newItem.notes || merged[dupIdx].notes,
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          merged.unshift(newItem);
+        }
+      }
+      return merged;
+    });
+
+    // Save sequentially to make sure everything persists in Firestore
+    for (const item of formattedItems) {
+      try {
+        await saveWatchlistItem(item);
+      } catch (err) {
+        console.error("Failed saving imported watchlist item:", err);
+      }
+    }
+  };
+
   const addedMediaIds = watchlist.map(i => `${i.mediaType}_${i.mediaId}`);
 
   // Dynamic filter lists for bento indicators
@@ -210,9 +264,15 @@ export default function App() {
               <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
             ) : currentUser ? (
               <div className="flex items-center gap-3">
-                <div className="hidden md:flex flex-col items-end">
-                  <span className="text-xs font-bold text-slate-200">{currentUser.displayName}</span>
-                  <span className="text-[9px] uppercase font-semibold text-emerald-450 flex items-center gap-1">
+                <div 
+                  className="hidden md:flex flex-col items-end cursor-pointer group" 
+                  onClick={() => setActiveTab("profile")}
+                  title="View Profile Stats"
+                >
+                  <span className="text-xs font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">
+                    {currentUser.displayName}
+                  </span>
+                  <span className="text-[9px] uppercase font-semibold text-emerald-450 flex items-center gap-1 group-hover:text-indigo-300 transition-colors">
                     <ShieldCheck className="w-2.5 h-2.5" />
                     Synchronized
                   </span>
@@ -220,7 +280,9 @@ export default function App() {
                 <img
                   src={currentUser.photoURL}
                   alt={currentUser.displayName}
-                  className="w-9 h-9 rounded-full border border-indigo-500/25 bg-slate-900 shadow-md shadow-indigo-500/5"
+                  onClick={() => setActiveTab("profile")}
+                  className="w-9 h-9 rounded-full border border-indigo-500/25 bg-slate-900 shadow-md shadow-indigo-500/5 cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
+                  title="View Profile Stats"
                 />
                 <button
                   onClick={handleLogout}
@@ -424,6 +486,16 @@ export default function App() {
               <MessageSquare className="w-4 h-4" />
               Community Logs
             </button>
+            <button
+              onClick={() => setActiveTab("profile")}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeTab === "profile" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200 hover:bg-slate-805/30"
+              }`}
+              id="tab-btn-profile"
+            >
+              <User className="w-4 h-4" />
+              My Profile
+            </button>
           </div>
         )}
 
@@ -536,6 +608,24 @@ export default function App() {
                 />
               </motion.div>
             )}
+
+            {activeTab === "profile" && (
+              <motion.div
+                key="profile"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.2 }}
+              >
+                <UserProfileBlock
+                  watchlist={watchlist}
+                  currentUser={currentUser}
+                  onOpenDetails={(item) => setSelectedMediaDetail(item)}
+                  onLoginRequest={handleLogin}
+                  onImportItems={handleImportWatchlist}
+                />
+              </motion.div>
+            )}
           </AnimatePresence>
         </main>
       </div>
@@ -552,6 +642,7 @@ export default function App() {
             isInWatchlist={watchlist.some(
               (item) => item.mediaId === selectedMediaDetail.mediaId && item.mediaType === selectedMediaDetail.mediaType
             )}
+            onOpenDetails={(item) => setSelectedMediaDetail(item)}
           />
         )}
       </AnimatePresence>
@@ -561,7 +652,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
           <div className="text-xs text-slate-500">
             <p className="font-bold text-slate-450 mb-1">Unified East & West Media Tracker</p>
-            <p>© 2026. Powered by AniList GraphQL & Gemini 3.5 Flash Model.</p>
+            <p>© 2026. Powered by AniList GraphQL & Recommendation Models.</p>
           </div>
           
           <div className="flex gap-4 text-xs text-slate-450 font-bold" id="footer-links">

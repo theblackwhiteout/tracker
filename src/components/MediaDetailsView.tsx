@@ -40,6 +40,9 @@ export interface DetailedMedia {
   recommendedSimilars: {
     title: string;
     description: string;
+    mediaType?: string;
+    mediaId?: string;
+    coverImage?: string;
   }[];
 }
 
@@ -57,11 +60,13 @@ interface MediaDetailsViewProps {
   onClose: () => void;
   onAddToWatchlist: (item: MediaItem, status: WatchStatus) => void;
   isInWatchlist: boolean;
+  onOpenDetails?: (item: MediaItem) => void;
 }
 
-export default function MediaDetailsView({ media, onClose, onAddToWatchlist, isInWatchlist }: MediaDetailsViewProps) {
+export default function MediaDetailsView({ media, onClose, onAddToWatchlist, isInWatchlist, onOpenDetails }: MediaDetailsViewProps) {
   const [details, setDetails] = useState<DetailedMedia | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExpandingRecommendation, setIsExpandingRecommendation] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "cast" | "trivia">("overview");
 
@@ -116,6 +121,51 @@ export default function MediaDetailsView({ media, onClose, onAddToWatchlist, isI
   const directUrl = details?.malUrlOrImdbUrl || (isOtaku 
     ? `https://myanimelist.net/search/all?q=${encodeURIComponent(media.title)}`
     : `https://www.imdb.com/find?q=${encodeURIComponent(media.title)}`);
+
+  const handleRecommendationClick = async (sim: { title: string; description: string; mediaType?: string; mediaId?: string; coverImage?: string }) => {
+    if (!onOpenDetails || isExpandingRecommendation) return;
+
+    setIsExpandingRecommendation(true);
+    const simType = (sim.mediaType?.toLowerCase() || (isOtaku ? "anime" : "movie")) as MediaType;
+
+    const tempMedia: MediaItem = {
+      mediaId: sim.mediaId || "search_" + encodeURIComponent(sim.title),
+      title: sim.title,
+      mediaType: simType,
+      coverImage: sim.coverImage || `https://placehold.co/300x450/0f172a/3b82f6?text=${encodeURIComponent(sim.title)}`,
+      description: sim.description,
+      genres: [],
+      totalUnits: 0,
+      year: media.year || 2026,
+      rating: 8.0
+    };
+
+    try {
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: sim.title, mediaType: simType })
+      });
+
+      if (response.ok) {
+        const results = await response.json();
+        const bestMatch = results.find(
+          (res: any) => res.title?.toLowerCase() === sim.title.toLowerCase()
+        ) || results[0];
+
+        if (bestMatch) {
+          onOpenDetails(bestMatch);
+          setIsExpandingRecommendation(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Background lookup check for recommended item failed:", e);
+    }
+
+    onOpenDetails(tempMedia);
+    setIsExpandingRecommendation(false);
+  };
 
   return (
     <motion.div 
@@ -394,9 +444,38 @@ export default function MediaDetailsView({ media, onClose, onAddToWatchlist, isI
                       </h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {details.recommendedSimilars.map((sim, index) => (
-                          <div key={index} className="bg-slate-950/40 hover:bg-slate-950/60 transition-colors border border-slate-850 rounded-xl p-4 space-y-1">
-                            <span className="text-xs font-black text-slate-200 block">{sim.title}</span>
-                            <p className="text-[11px] text-slate-450 leading-relaxed">{sim.description}</p>
+                          <div 
+                            key={index} 
+                            onClick={() => handleRecommendationClick(sim)}
+                            className="bg-slate-950/40 hover:bg-slate-950/60 hover:border-slate-700/60 active:scale-[0.99] transition-all border border-slate-850 rounded-xl p-3 flex gap-3 cursor-pointer group relative overflow-hidden"
+                            title={`Click to view expanded info for ${sim.title}`}
+                          >
+                            {sim.coverImage && (
+                              <img 
+                                src={sim.coverImage} 
+                                alt={sim.title}
+                                referrerPolicy="no-referrer"
+                                className="w-12 h-18 object-cover rounded bg-slate-900 border border-slate-800 flex-shrink-0"
+                              />
+                            )}
+                            <div className="flex-1 min-w-0 flex flex-col justify-between">
+                              <div>
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="text-xs font-black text-slate-200 group-hover:text-indigo-400 transition-colors block line-clamp-1">
+                                    {sim.title}
+                                  </span>
+                                  {sim.mediaType && (
+                                    <span className="text-[8px] uppercase font-bold bg-indigo-950/40 border border-indigo-900/40 text-indigo-300 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                                      {sim.mediaType}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-450 leading-relaxed line-clamp-2 mt-1">{sim.description}</p>
+                              </div>
+                              <span className="text-[9px] uppercase font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-all block text-right">
+                                Explore Details &rarr;
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>

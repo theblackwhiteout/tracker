@@ -729,6 +729,9 @@ async function getAniListDetails(mediaId: string, title: string, mediaType: stri
                 }
                 description
                 type
+                coverImage {
+                  large
+                }
               }
             }
           }
@@ -802,6 +805,9 @@ async function getAniListDetails(mediaId: string, title: string, mediaType: stri
                 }
                 description
                 type
+                coverImage {
+                  large
+                }
               }
             }
           }
@@ -864,15 +870,20 @@ async function getAniListDetails(mediaId: string, title: string, mediaType: stri
     const recMedia = node.mediaRecommendation;
     if (!recMedia) return null;
     return {
-      title: recMedia.title.english || recMedia.title.romaji,
-      description: recMedia.description ? recMedia.description.replace(/<[^>]*>/g, "").substring(0, 100) + "..." : "No synopsis."
+      title: recMedia.title.english || recMedia.title.romaji || recMedia.title.native || "Unknown Title",
+      description: recMedia.description ? recMedia.description.replace(/<[^>]*>/g, "").substring(0, 100) + "..." : "No synopsis.",
+      mediaType: recMedia.type === "MANGA" ? "manga" : "anime",
+      mediaId: recMedia.id ? String(recMedia.id) : undefined,
+      coverImage: recMedia.coverImage?.large || undefined
     };
   }).filter(Boolean) || [];
 
   if (similars.length === 0) {
     similars.push({
       title: mediaType === "manga" ? "Death Note (Manga)" : "Steins;Gate",
-      description: "Highly rated title sharing core genres and thematic focus."
+      description: "Highly rated title sharing core genres and thematic focus.",
+      mediaType: mediaType === "manga" ? "manga" : "anime",
+      mediaId: mediaType === "manga" ? "30021" : "9253"
     });
   }
 
@@ -1092,9 +1103,11 @@ Output precisely according to the required responseSchema JSON structure.`;
                 type: Type.OBJECT,
                 properties: {
                   title: { type: Type.STRING },
-                  description: { type: Type.STRING }
+                  description: { type: Type.STRING },
+                  mediaType: { type: Type.STRING, description: "Must be 'movie', 'tv', 'anime', or 'manga'" },
+                  mediaId: { type: Type.STRING, description: "A unique slug ID or alphanumeric string" }
                 },
-                required: ["title", "description"]
+                required: ["title", "description", "mediaType", "mediaId"]
               }
             }
           },
@@ -1160,8 +1173,18 @@ function getOfflineDetails(title: string, mediaType: string, mediaId: string) {
       `A team of over 200 artists worked for more than 18 months to bring the major high-stakes scenes of this sequence to life.`
     ],
     recommendedSimilars: [
-      { title: isOtaku ? "Death Note" : "Interstellar", description: "A high-stakes thriller filled with logical mind games and incredibly high stakes tension." },
-      { title: isOtaku ? "Frieren: Beyond Journey's End" : "Breaking Bad", description: "A beautifully paced story dealing with consequences, friendship, and spectacular character growth." }
+      { 
+        title: isOtaku ? "Death Note" : "Interstellar", 
+        description: "A high-stakes thriller filled with logical mind games and incredibly high stakes tension.",
+        mediaType: isOtaku ? "anime" : "movie",
+        mediaId: isOtaku ? "1535" : "interstellar"
+      },
+      { 
+        title: isOtaku ? "Frieren: Beyond Journey's End" : "Breaking Bad", 
+        description: "A beautifully paced story dealing with consequences, friendship, and spectacular character growth.",
+        mediaType: isOtaku ? "anime" : "tv",
+        mediaId: isOtaku ? "154587" : "breaking-bad"
+      }
     ]
   };
 }

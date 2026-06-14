@@ -73,7 +73,7 @@ export default function AIRecommendations({ watchlist, onAddToWatchlist, watchli
         <div className="flex flex-col gap-1">
           <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2" id="recs-title">
             <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
-            Gemini Cohort Predictions
+            Cohort Predictions
           </h2>
           <p className="text-xs text-slate-400">
             Intelligent predictive matches bridging Japanese anime lore with legendary Western cinematic features.
@@ -116,7 +116,7 @@ export default function AIRecommendations({ watchlist, onAddToWatchlist, watchli
         </div>
       ) : filteredRecommendations.length === 0 ? (
         <div className="text-center py-10 bg-slate-955 rounded-xl border border-dashed border-slate-800 text-slate-550 font-medium text-xs">
-          No predictive media recommendations found under the {globalCategory} category filter. Please add more titles to your watchlist so Gemini can align suggestions!
+          No predictive media recommendations found under the {globalCategory} category filter. Please add more titles to your watchlist so suggestions can align!
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" id="recs-grid">
@@ -169,7 +169,7 @@ export default function AIRecommendations({ watchlist, onAddToWatchlist, watchli
                   {item.rationale && (
                     <div className="bg-indigo-950/20 border border-indigo-950/40 rounded-lg p-2.5 mt-3 text-[11.5px] text-slate-300 leading-relaxed italic">
                       <span className="font-black text-[9px] uppercase text-indigo-400 not-italic block mb-0.5 tracking-wider">
-                        Gemini AI Rationale
+                        AI Rationale
                       </span>
                       "{item.rationale}"
                     </div>
