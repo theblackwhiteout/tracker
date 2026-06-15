@@ -73,7 +73,17 @@ export default function App() {
   useEffect(() => {
     setIsAuthLoading(true);
     const unsubscribe = subscribeToAuth((user) => {
-      setCurrentUser(user);
+      if (user) {
+        setCurrentUser(user);
+      } else {
+        // Fallback to unified local guest session so user can track immediately
+        setCurrentUser({
+          uid: "guest_user",
+          displayName: "Guest Explorer",
+          email: "guest@example.com",
+          photoURL: "https://api.dicebear.com/7.x/pixel-art/svg?seed=guest_user"
+        });
+      }
       setIsAuthLoading(false);
     });
     return () => unsubscribe();
@@ -100,20 +110,68 @@ export default function App() {
     }
   };
 
+  const [authLoading, setAuthLoading] = useState(false);
+
   const handleLogin = async () => {
     try {
+      setAuthLoading(true);
       const user = await loginWithGoogle();
-      setCurrentUser(user);
-    } catch (err) {
-      console.error("Login failed:", err);
+
+      // Auto-migrate any accumulated guest items to the newly registered/logged-in Google account
+      const guestItems = watchlist.filter(item => item.userId === "guest_user");
+      if (guestItems.length > 0) {
+        console.log(`Merging ${guestItems.length} items from offline guest session into authenticated Firebase account...`);
+        const migratedItems: WatchlistItem[] = guestItems.map(item => ({
+          ...item,
+          id: `${user.uid}_${item.mediaType}_${item.mediaId}`,
+          userId: user.uid,
+          updatedAt: new Date().toISOString()
+        }));
+        
+        for (const item of migratedItems) {
+          try {
+            await saveWatchlistItem(item);
+          } catch (e) {
+            console.error("Failed to migrate guest item:", e);
+          }
+        }
+        
+        // Fetch user's synchronized backend watchlist
+        const userCloudWatch = await getWatchlist(user.uid);
+        setWatchlist(userCloudWatch);
+        
+        // Clean out guest items from local localStorage
+        const rawLocal = localStorage.getItem("unified_media_tracker_watchlist");
+        if (rawLocal) {
+          try {
+            const list: WatchlistItem[] = JSON.parse(rawLocal);
+            const remainder = list.filter(item => item.userId !== "guest_user");
+            localStorage.setItem("unified_media_tracker_watchlist", JSON.stringify(remainder));
+          } catch (err) {
+            // ignore
+          }
+        }
+      } else {
+        setCurrentUser(user);
+        const userWatch = await getWatchlist(user.uid);
+        setWatchlist(userWatch);
+      }
+    } catch (err: any) {
+      console.error("Google Auth execution failed:", err);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
   const handleLogout = async () => {
     try {
       await logUserOut();
-      setCurrentUser(null);
-      setWatchlist([]);
+      setCurrentUser({
+        uid: "guest_user",
+        displayName: "Guest Explorer",
+        email: "guest@example.com",
+        photoURL: "https://api.dicebear.com/7.x/pixel-art/svg?seed=guest_user"
+      });
     } catch (err) {
       console.error("Logout failed:", err);
     }
@@ -121,12 +179,14 @@ export default function App() {
 
   // Watchlist manipulation callbacks
   const handleAddToWatchlist = async (media: MediaItem, customStatus: WatchStatus = "planning") => {
-    if (!currentUser) {
-      alert("Sign In with Google first using the button in the upper right header to save your watchlist across devices!");
-      return;
-    }
+    const activeUser = currentUser || {
+      uid: "guest_user",
+      displayName: "Guest Explorer",
+      email: "guest@example.com",
+      photoURL: "https://api.dicebear.com/7.x/pixel-art/svg?seed=guest_user"
+    };
 
-    const itemId = `${currentUser.uid}_${media.mediaType}_${media.mediaId}`;
+    const itemId = `${activeUser.uid}_${media.mediaType}_${media.mediaId}`;
     
     // Check duplication
     const duplicate = watchlist.find(item => item.id === itemId);
@@ -134,7 +194,7 @@ export default function App() {
 
     const newItem: WatchlistItem = {
       id: itemId,
-      userId: currentUser.uid,
+      userId: activeUser.uid,
       mediaId: media.mediaId,
       mediaType: media.mediaType,
       title: media.title,
@@ -153,8 +213,8 @@ export default function App() {
     try {
       await saveWatchlistItem(newItem);
     } catch (err) {
-      console.error("Failed storing to synchronized DB:", err);
-      // Rollback on duplicate or permission issues
+      console.error("Failed storing item:", err);
+      // Rollback on issues
       setWatchlist(prev => prev.filter(item => item.id !== itemId));
     }
   };
@@ -300,7 +360,7 @@ export default function App() {
                 id="btn-login"
               >
                 <LogIn className="w-4 h-4" />
-                Sign In with Google
+                Sign In / Register
               </button>
             )}
           </div>
@@ -646,6 +706,8 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+
 
       {/* FOOTER BAR */}
       <footer className="bg-slate-950 border-t border-slate-900 py-8" id="footer-section">

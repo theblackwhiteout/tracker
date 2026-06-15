@@ -91,180 +91,363 @@ export default function UserProfileBlock({
     return lines;
   };
 
-  const detectAndParseCSV = (csvText: string, defaultType: MediaType = "anime") => {
-    setImportError("");
-    setImportSuccess("");
+  const parseXML = (xmlText: string): any[] => {
+    const list: any[] = [];
     try {
-      const rawRows = parseCSV(csvText);
-      if (rawRows.length < 2) {
-        throw new Error("The CSV file is empty or does not contain a header and a data row.");
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+      
+      const parserError = xmlDoc.getElementsByTagName("parsererror");
+      if (parserError.length > 0) {
+        throw new Error("Invalid XML formatting in standard backup.");
       }
 
-      const headers = rawRows[0].map(h => h.trim().toLowerCase());
-      const dataRows = rawRows.slice(1);
+      // 1. Process <anime> tags
+      const animeNodes = xmlDoc.getElementsByTagName("anime");
+      for (let i = 0; i < animeNodes.length; i++) {
+        const node = animeNodes[i];
+        const getVal = (tag: string) => {
+          const el = node.getElementsByTagName(tag)[0];
+          return el ? el.textContent || "" : "";
+        };
 
-      let titleIdx = -1;
-      let typeIdx = -1;
-      let statusIdx = -1;
-      let progressIdx = -1;
-      let totalUnitsIdx = -1;
-      let ratingIdx = -1;
-      let notesIdx = -1;
-      let idIdx = -1;
-      let coverIdx = -1;
-
-      headers.forEach((h, i) => {
-        if (["title", "series_title", "name", "media_title", "series title", "manga_title", "anime_title"].some(k => h.includes(k))) {
-          if (titleIdx === -1 || h === "title" || h === "series_title") {
-            titleIdx = i;
-          }
-        }
-        if (["id", "media_id", "series_animedb_id", "series_mangadb_id", "series_id", "slug", "anilist_id"].some(k => h.includes(k))) {
-          idIdx = i;
-        }
-        if (["type", "media_type", "series_type", "format"].some(k => h.includes(k))) {
-          typeIdx = i;
-        }
+        const mediaId = getVal("series_animedb_id") || getVal("my_id") || `xml_anime_${i}_${Date.now()}`;
+        const title = getVal("series_title") || getVal("title") || `XML Anime ${i}`;
         
-        const isMangaMode = defaultType === "manga";
-
-        // Status Column matching logic with preference for manga/reading status when in manga fallback mode
-        if (isMangaMode) {
-          if (["read_status", "readstatus", "reading_status", "reading status", "my_read_status"].some(k => h.includes(k))) {
-            statusIdx = i;
-          } else if (statusIdx === -1 && ["status", "my_status", "state", "list_status", "watch_status"].some(k => h.includes(k))) {
-            statusIdx = i;
-          }
-        } else {
-          if (["watch_status", "watchstatus", "watching_status", "watching status", "my_watch_status"].some(k => h.includes(k))) {
-            statusIdx = i;
-          } else if (statusIdx === -1 && ["status", "my_status", "state", "list_status", "read_status"].some(k => h.includes(k))) {
-            statusIdx = i;
-          }
-        }
-
-        // Progress/Count matching logic with preference for reading progress when in manga mode
-        if (isMangaMode) {
-          if (["read_chapters", "my_read_chapters", "chapters_read", "chapters", "read", "last_read", "last_read_chapter", "chapter", "progress"].some(k => h.includes(k))) {
-            progressIdx = i;
-          } else if (progressIdx === -1 && ["watched_episodes", "watched", "episodes", "my_watched_episodes"].some(k => h.includes(k))) {
-            progressIdx = i;
-          }
-        } else {
-          if (["watched_episodes", "watched", "episodes", "my_watched_episodes", "progress", "last_watched"].some(k => h.includes(k))) {
-            progressIdx = i;
-          } else if (progressIdx === -1 && ["read_chapters", "my_read_chapters", "chapters", "read", "chapter"].some(k => h.includes(k))) {
-            progressIdx = i;
-          }
-        }
-
-        // Total units logic (Episodes vs Chapters)
-        if (isMangaMode) {
-          if (["series_chapters", "chapters_total", "total_chapters", "total_vols", "total_volumes", "volumes"].some(k => h.includes(k))) {
-            totalUnitsIdx = i;
-          } else if (totalUnitsIdx === -1 && ["series_episodes", "episodes_total", "total_episodes", "total", "units"].some(k => h.includes(k))) {
-            totalUnitsIdx = i;
-          }
-        } else {
-          if (["series_episodes", "episodes_total", "total_episodes", "total", "units"].some(k => h.includes(k))) {
-            totalUnitsIdx = i;
-          } else if (totalUnitsIdx === -1 && ["series_chapters", "chapters_total", "total_chapters"].some(k => h.includes(k))) {
-            totalUnitsIdx = i;
-          }
-        }
-
-        if (["rating", "score", "my_score", "my_rating", "stars", "personal_score"].some(k => h.includes(k))) {
-          ratingIdx = i;
-        }
-        if (["notes", "comments", "review", "my_comments", "comment"].some(k => h.includes(k))) {
-          notesIdx = i;
-        }
-        if (["cover", "image", "cover_image", "coverimage", "thumbnail", "image_url"].some(k => h.includes(k))) {
-          coverIdx = i;
-        }
-      });
-
-      if (titleIdx === -1) {
-        titleIdx = 0; // Default fallback to first column
-      }
-
-      const parsedList: any[] = [];
-
-      dataRows.forEach((row) => {
-        const getVal = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : "");
-
-        const title = getVal(titleIdx);
-        if (!title) return;
-
-        let rawType = getVal(typeIdx).toLowerCase();
-        let mediaType: MediaType = defaultType;
-        if (rawType) {
-          if (["manga", "manhwa", "manhua", "novel", "book"].some(k => rawType.includes(k))) {
-            mediaType = "manga";
-          } else if (["anime", "ova", "ona", "special", "tv (japanese)"].some(k => rawType.includes(k))) {
-            mediaType = "anime";
-          } else if (["movie", "film"].some(k => rawType.includes(k))) {
-            mediaType = "movie";
-          } else if (["tv", "show", "tv show", "live action", "drama", "series"].some(k => rawType.includes(k))) {
-            mediaType = "tv";
-          }
-        }
-
-        let rawStatus = getVal(statusIdx).toLowerCase();
+        let rawStatus = getVal("my_status").toLowerCase().trim();
         let status: WatchStatus = "planning";
-        if (rawStatus) {
-          if (["watching", "reading", "current", "1", "watching_reading", "actively", "inprogress", "in progress", "rereading", "re_reading", "re-reading"].some(k => rawStatus.includes(k))) {
-            status = "current";
-          } else if (["completed", "finished", "read", "done", "2", "complete"].some(k => rawStatus.includes(k))) {
-            status = "completed";
-          } else if (["plan to watch", "plan to read", "planning", "6", "plan_to_watch", "plan_to_read", "stalled", "backlog"].some(k => rawStatus.includes(k))) {
-            status = "planning";
-          } else if (["on hold", "onhold", "paused", "3", "on-hold", "suspended"].some(k => rawStatus.includes(k))) {
-            status = "paused";
-          } else if (["dropped", "abandoned", "4"].some(k => rawStatus.includes(k))) {
-            status = "dropped";
-          }
+        if (["watching", "current", "1", "watching_reading", "actively", "inprogress", "in progress"].some(k => rawStatus.includes(k))) {
+          status = "current";
+        } else if (["completed", "finished", "read", "done", "2", "complete"].some(k => rawStatus.includes(k))) {
+          status = "completed";
+        } else if (["plan to watch", "plan to read", "planning", "6", "plan_to_watch", "plan_to_read", "stalled", "backlog"].some(k => rawStatus.includes(k))) {
+          status = "planning";
+        } else if (["on hold", "onhold", "paused", "3", "on-hold", "suspended"].some(k => rawStatus.includes(k))) {
+          status = "paused";
+        } else if (["dropped", "abandoned", "4"].some(k => rawStatus.includes(k))) {
+          status = "dropped";
         }
 
-        const progress = parseInt(getVal(progressIdx)) || 0;
-        const totalUnits = parseInt(getVal(totalUnitsIdx)) || 0;
-        
-        let rating = parseFloat(getVal(ratingIdx)) || 0;
-        if (rating > 10) {
-          rating = Math.round(rating / 10);
-        } else if (rating > 5 && rating <= 10) {
-          // Assume 10 scale
-        } else if (rating > 0 && rating <= 5) {
-          rating = rating * 2; // scale to 10
-        }
+        const progress = parseInt(getVal("my_watched_episodes")) || parseInt(getVal("my_progress")) || 0;
+        const totalUnits = parseInt(getVal("series_episodes")) || parseInt(getVal("total_episodes")) || 0;
+        let rating = parseFloat(getVal("my_score")) || parseFloat(getVal("score")) || 0;
+        if (rating > 10) rating = Math.round(rating / 10);
+        const notes = getVal("my_comments") || getVal("notes") || getVal("comments") || "";
 
-        const notes = getVal(notesIdx);
-        const mediaId = getVal(idIdx) || `csv_${encodeURIComponent(title.toLowerCase().replace(/[^a-z0-9]/g, "_"))}`;
-        const coverImage = getVal(coverIdx) || undefined;
-
-        parsedList.push({
+        list.push({
           mediaId,
-          mediaType,
+          mediaType: "anime",
           title,
           status,
           progress,
           totalUnits,
           rating,
           notes,
-          coverImage
+          coverImage: undefined
         });
-      });
+      }
 
-      setParsedPreview(parsedList);
-      setDetectedMapping({
-        title: titleIdx !== -1 ? headers[titleIdx] : "Auto-estimated Col 0",
-        mediaType: typeIdx !== -1 ? headers[typeIdx] : "Fixed Default",
-        status: statusIdx !== -1 ? headers[statusIdx] : "Fixed Default",
-        progress: progressIdx !== -1 ? headers[progressIdx] : "Fixed Default",
-        rating: ratingIdx !== -1 ? headers[ratingIdx] : "Fixed Default",
-      });
-    } catch (err: any) {
-      setImportError(err.message || "Failed decoding CSV content. Please check alignment.");
+      // 2. Process <manga> tags
+      const mangaNodes = xmlDoc.getElementsByTagName("manga");
+      for (let i = 0; i < mangaNodes.length; i++) {
+        const node = mangaNodes[i];
+        const getVal = (tag: string) => {
+          const el = node.getElementsByTagName(tag)[0];
+          return el ? el.textContent || "" : "";
+        };
+
+        const mediaId = getVal("series_mangadb_id") || getVal("my_id") || `xml_manga_${i}_${Date.now()}`;
+        const title = getVal("series_title") || getVal("title") || `XML Manga ${i}`;
+        
+        let rawStatus = getVal("my_status").toLowerCase().trim();
+        let status: WatchStatus = "planning";
+        if (["reading", "current", "1", "watching_reading", "actively", "inprogress", "in progress"].some(k => rawStatus.includes(k))) {
+          status = "current";
+        } else if (["completed", "finished", "read", "done", "2", "complete"].some(k => rawStatus.includes(k))) {
+          status = "completed";
+        } else if (["plan to watch", "plan to read", "planning", "6", "plan_to_watch", "plan_to_read", "stalled", "backlog"].some(k => rawStatus.includes(k))) {
+          status = "planning";
+        } else if (["on hold", "onhold", "paused", "3", "on-hold", "suspended"].some(k => rawStatus.includes(k))) {
+          status = "paused";
+        } else if (["dropped", "abandoned", "4"].some(k => rawStatus.includes(k))) {
+          status = "dropped";
+        }
+
+        const progress = parseInt(getVal("my_read_chapters")) || parseInt(getVal("my_progress")) || 0;
+        const totalUnits = parseInt(getVal("series_chapters")) || parseInt(getVal("total_chapters")) || 0;
+        let rating = parseFloat(getVal("my_score")) || parseFloat(getVal("score")) || 0;
+        if (rating > 10) rating = Math.round(rating / 10);
+        const notes = getVal("my_comments") || getVal("notes") || getVal("comments") || "";
+
+        list.push({
+          mediaId,
+          mediaType: "manga",
+          title,
+          status,
+          progress,
+          totalUnits,
+          rating,
+          notes,
+          coverImage: undefined
+        });
+      }
+
+      // 3. Fallback generic items (i.e. if XML contains <entry> or <item> nodes rather than nested MAL structure)
+      if (list.length === 0) {
+        const genericNodes = xmlDoc.getElementsByTagName("item").length > 0 
+          ? xmlDoc.getElementsByTagName("item") 
+          : xmlDoc.getElementsByTagName("entry");
+        
+        for (let i = 0; i < genericNodes.length; i++) {
+          const node = genericNodes[i];
+          const getVal = (tag: string) => {
+            const el = node.getElementsByTagName(tag)[0];
+            return el ? el.textContent || "" : "";
+          };
+
+          const title = getVal("title") || getVal("series_title") || `XML Item ${i}`;
+          const typeRaw = (getVal("type") || getVal("mediaType") || getVal("media_type") || "anime").toLowerCase();
+          const mediaType: MediaType = ["manga", "manhwa", "book", "chapters", "volumes"].some(k => typeRaw.includes(k)) 
+            ? "manga" 
+            : ["movie", "film"].some(k => typeRaw.includes(k))
+            ? "movie"
+            : ["tv", "series", "show"].some(k => typeRaw.includes(k))
+            ? "tv"
+            : "anime";
+
+          let rawStatus = (getVal("status") || getVal("my_status") || getVal("watch_status") || "").toLowerCase().trim();
+          let status: WatchStatus = "planning";
+          if (["watching", "reading", "current", "1", "inprogress", "in progress"].some(k => rawStatus.includes(k))) {
+            status = "current";
+          } else if (["completed", "finished", "read", "done", "complete", "2"].some(k => rawStatus.includes(k))) {
+            status = "completed";
+          } else if (["planning", "plan", "plan to read", "plan to watch", "6"].some(k => rawStatus.includes(k))) {
+            status = "planning";
+          } else if (["hold", "paused", "on-hold", "on hold", "3"].some(k => rawStatus.includes(k))) {
+            status = "paused";
+          } else if (["dropped", "4"].some(k => rawStatus.includes(k))) {
+            status = "dropped";
+          }
+
+          const progress = parseInt(getVal("progress")) || parseInt(getVal("progress_chapters")) || parseInt(getVal("progress_episodes")) || parseInt(getVal("watched")) || 0;
+          const totalUnits = parseInt(getVal("totalUnits")) || parseInt(getVal("total_units")) || parseInt(getVal("episodes")) || parseInt(getVal("chapters")) || 0;
+          let rating = parseFloat(getVal("rating")) || parseFloat(getVal("score")) || 0;
+          if (rating > 10) rating = Math.round(rating / 10);
+          const notes = getVal("notes") || getVal("comments") || getVal("my_comments") || "";
+
+          list.push({
+            mediaId: getVal("mediaId") || getVal("media_id") || getVal("id") || `xml_gen_${i}_${Date.now()}`,
+            mediaType,
+            title,
+            status,
+            progress,
+            totalUnits,
+            rating,
+            notes,
+            coverImage: undefined
+          });
+        }
+      }
+    } catch (e: any) {
+      console.warn("DOMParser XML failed:", e);
+    }
+    return list;
+  };
+
+  const detectAndParseFileContent = (fileText: string, defaultType: MediaType = "anime") => {
+    setImportError("");
+    setImportSuccess("");
+    const trimmed = fileText.trim();
+    
+    // Check if the input is XML format
+    if (trimmed.startsWith("<") || trimmed.includes("<?xml") || trimmed.includes("<myanimelist>")) {
+      try {
+        const parsedList = parseXML(fileText);
+        if (parsedList.length === 0) {
+          throw new Error("No XML entries (<anime>, <manga>, or generic elements) were recognized in this export file.");
+        }
+        setParsedPreview(parsedList);
+        setDetectedMapping({
+          title: "MyAnimeList XML Title Schema",
+          mediaType: "Dynamic Node (Anime/Manga)",
+          status: "Unified Status Map",
+          progress: "Standard Chapter/Episode Node",
+          rating: "Real Score (1-10)",
+        });
+      } catch (err: any) {
+        setImportError(err.message || "Failed decoding XML list structure.");
+      }
+    } else {
+      // Parse as conventional CSV backup
+      try {
+        const rawRows = parseCSV(fileText);
+        if (rawRows.length < 2) {
+          throw new Error("The CSV file is empty or does not contain a header and a data row.");
+        }
+
+        const headers = rawRows[0].map(h => h.trim().toLowerCase());
+        const dataRows = rawRows.slice(1);
+
+        let titleIdx = -1;
+        let typeIdx = -1;
+        let statusIdx = -1;
+        let progressIdx = -1;
+        let totalUnitsIdx = -1;
+        let ratingIdx = -1;
+        let notesIdx = -1;
+        let idIdx = -1;
+        let coverIdx = -1;
+
+        headers.forEach((h, i) => {
+          if (["title", "series_title", "name", "media_title", "series title", "manga_title", "anime_title"].some(k => h.includes(k))) {
+            if (titleIdx === -1 || h === "title" || h === "series_title") {
+              titleIdx = i;
+            }
+          }
+          if (["id", "media_id", "series_animedb_id", "series_mangadb_id", "series_id", "slug", "anilist_id"].some(k => h.includes(k))) {
+            idIdx = i;
+          }
+          if (["type", "media_type", "series_type", "format"].some(k => h.includes(k))) {
+            typeIdx = i;
+          }
+          
+          const isMangaMode = defaultType === "manga";
+
+          if (isMangaMode) {
+            if (["read_status", "readstatus", "reading_status", "reading status", "my_read_status"].some(k => h.includes(k))) {
+              statusIdx = i;
+            } else if (statusIdx === -1 && ["status", "my_status", "state", "list_status", "watch_status"].some(k => h.includes(k))) {
+              statusIdx = i;
+            }
+          } else {
+            if (["watch_status", "watchstatus", "watching_status", "watching status", "my_watch_status"].some(k => h.includes(k))) {
+              statusIdx = i;
+            } else if (statusIdx === -1 && ["status", "my_status", "state", "list_status", "read_status"].some(k => h.includes(k))) {
+              statusIdx = i;
+            }
+          }
+
+          if (isMangaMode) {
+            if (["read_chapters", "my_read_chapters", "chapters_read", "chapters", "read", "last_read", "last_read_chapter", "chapter", "progress"].some(k => h.includes(k))) {
+              progressIdx = i;
+            } else if (progressIdx === -1 && ["watched_episodes", "watched", "episodes", "my_watched_episodes"].some(k => h.includes(k))) {
+              progressIdx = i;
+            }
+          } else {
+            if (["watched_episodes", "watched", "episodes", "my_watched_episodes", "progress", "last_watched"].some(k => h.includes(k))) {
+              progressIdx = i;
+            } else if (progressIdx === -1 && ["read_chapters", "my_read_chapters", "chapters", "read", "chapter"].some(k => h.includes(k))) {
+              progressIdx = i;
+            }
+          }
+
+          if (isMangaMode) {
+            if (["series_chapters", "chapters_total", "total_chapters", "total_vols", "total_volumes", "volumes"].some(k => h.includes(k))) {
+              totalUnitsIdx = i;
+            } else if (totalUnitsIdx === -1 && ["series_episodes", "episodes_total", "total_episodes", "total", "units"].some(k => h.includes(k))) {
+              totalUnitsIdx = i;
+            }
+          } else {
+            if (["series_episodes", "episodes_total", "total_episodes", "total", "units"].some(k => h.includes(k))) {
+              totalUnitsIdx = i;
+            } else if (totalUnitsIdx === -1 && ["series_chapters", "chapters_total", "total_chapters"].some(k => h.includes(k))) {
+              totalUnitsIdx = i;
+            }
+          }
+
+          if (["rating", "score", "my_score", "my_rating", "stars", "personal_score"].some(k => h.includes(k))) {
+            ratingIdx = i;
+          }
+          if (["notes", "comments", "review", "my_comments", "comment"].some(k => h.includes(k))) {
+            notesIdx = i;
+          }
+          if (["cover", "image", "cover_image", "coverimage", "thumbnail", "image_url"].some(k => h.includes(k))) {
+            coverIdx = i;
+          }
+        });
+
+        if (titleIdx === -1) {
+          titleIdx = 0;
+        }
+
+        const parsedList: any[] = [];
+
+        dataRows.forEach((row) => {
+          const getVal = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : "");
+
+          const title = getVal(titleIdx);
+          if (!title) return;
+
+          let rawType = getVal(typeIdx).toLowerCase();
+          let mediaType: MediaType = defaultType;
+          if (rawType) {
+            if (["manga", "manhwa", "manhua", "novel", "book"].some(k => rawType.includes(k))) {
+              mediaType = "manga";
+            } else if (["anime", "ova", "ona", "special", "tv (japanese)"].some(k => rawType.includes(k))) {
+              mediaType = "anime";
+            } else if (["movie", "film"].some(k => rawType.includes(k))) {
+              mediaType = "movie";
+            } else if (["tv", "show", "tv show", "live action", "drama", "series"].some(k => rawType.includes(k))) {
+              mediaType = "tv";
+            }
+          }
+
+          let rawStatus = getVal(statusIdx).toLowerCase();
+          let status: WatchStatus = "planning";
+          if (rawStatus) {
+            if (["watching", "reading", "current", "1", "watching_reading", "actively", "inprogress", "in progress", "rereading", "re_reading", "re-reading"].some(k => rawStatus.includes(k))) {
+              status = "current";
+            } else if (["completed", "finished", "read", "done", "2", "complete"].some(k => rawStatus.includes(k))) {
+              status = "completed";
+            } else if (["plan to watch", "plan to read", "planning", "6", "plan_to_watch", "plan_to_read", "stalled", "backlog"].some(k => rawStatus.includes(k))) {
+              status = "planning";
+            } else if (["on hold", "onhold", "paused", "3", "on-hold", "suspended"].some(k => rawStatus.includes(k))) {
+              status = "paused";
+            } else if (["dropped", "abandoned", "4"].some(k => rawStatus.includes(k))) {
+              status = "dropped";
+            }
+          }
+
+          const progress = parseInt(getVal(progressIdx)) || 0;
+          const totalUnits = parseInt(getVal(totalUnitsIdx)) || 0;
+          
+          let rating = parseFloat(getVal(ratingIdx)) || 0;
+          if (rating > 10) {
+            rating = Math.round(rating / 10);
+          } else if (rating > 5 && rating <= 10) {
+            // Assume 10 scale
+          } else if (rating > 0 && rating <= 5) {
+            rating = rating * 2;
+          }
+
+          const notes = getVal(notesIdx);
+          const mediaId = getVal(idIdx) || `csv_${encodeURIComponent(title.toLowerCase().replace(/[^a-z0-9]/g, "_"))}`;
+          const coverImage = getVal(coverIdx) || undefined;
+
+          parsedList.push({
+            mediaId,
+            mediaType,
+            title,
+            status,
+            progress,
+            totalUnits,
+            rating,
+            notes,
+            coverImage
+          });
+        });
+
+        setParsedPreview(parsedList);
+        setDetectedMapping({
+          title: titleIdx !== -1 ? headers[titleIdx] : "Auto-estimated Col 0",
+          mediaType: typeIdx !== -1 ? headers[typeIdx] : "Fixed Default",
+          status: statusIdx !== -1 ? headers[statusIdx] : "Fixed Default",
+          progress: progressIdx !== -1 ? headers[progressIdx] : "Fixed Default",
+          rating: ratingIdx !== -1 ? headers[ratingIdx] : "Fixed Default",
+        });
+      } catch (err: any) {
+        setImportError(err.message || "Failed decoding CSV content. Please check alignment.");
+      }
     }
   };
 
@@ -288,7 +471,7 @@ export default function UserProfileBlock({
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
-        detectAndParseCSV(text, defaultImportType);
+        detectAndParseFileContent(text, defaultImportType);
       };
       reader.readAsText(file);
     }
@@ -300,7 +483,7 @@ export default function UserProfileBlock({
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
-        detectAndParseCSV(text, defaultImportType);
+        detectAndParseFileContent(text, defaultImportType);
       };
       reader.readAsText(file);
     }
@@ -378,6 +561,63 @@ export default function UserProfileBlock({
     document.body.removeChild(link);
   };
 
+  const exportToXML = () => {
+    if (!watchlist || watchlist.length === 0) {
+      alert("No watchlist items to export!");
+      return;
+    }
+
+    let xml = `<?xml version="1.0" encoding="UTF-8" ?>\n`;
+    xml += `<!-- Exported from Unified Media Tracker -->\n`;
+    xml += `<myanimelist>\n`;
+    xml += `  <myinfo>\n`;
+    xml += `    <user_name>${currentUser?.displayName || "Guest"}</user_name>\n`;
+    xml += `    <user_export_type>1</user_export_type>\n`;
+    xml += `  </myinfo>\n\n`;
+
+    const animeItems = watchlist.filter(item => item.mediaType === "anime" || item.mediaType === "movie" || item.mediaType === "tv");
+    const mangaItems = watchlist.filter(item => item.mediaType === "manga");
+
+    animeItems.forEach((item, index) => {
+      xml += `  <anime>\n`;
+      xml += `    <series_animedb_id>${item.mediaId}</series_animedb_id>\n`;
+      xml += `    <series_title><![CDATA[${item.title}]]></series_title>\n`;
+      xml += `    <series_type>${item.mediaType === "movie" ? "Movie" : "TV"}</series_type>\n`;
+      xml += `    <series_episodes>${item.totalUnits || 0}</series_episodes>\n`;
+      xml += `    <my_id>${index}</my_id>\n`;
+      xml += `    <my_watched_episodes>${item.progress || 0}</my_watched_episodes>\n`;
+      xml += `    <my_score>${item.rating || 0}</my_score>\n`;
+      xml += `    <my_status><![CDATA[${item.status === "current" ? "Watching" : item.status === "completed" ? "Completed" : item.status === "planning" ? "Plan to Watch" : item.status === "paused" ? "On-Hold" : "Dropped"}]]></my_status>\n`;
+      xml += `    <my_comments><![CDATA[${item.notes || ""}]]></my_comments>\n`;
+      xml += `  </anime>\n`;
+    });
+
+    mangaItems.forEach((item, index) => {
+      xml += `  <manga>\n`;
+      xml += `    <series_mangadb_id>${item.mediaId}</series_mangadb_id>\n`;
+      xml += `    <series_title><![CDATA[${item.title}]]></series_title>\n`;
+      xml += `    <series_type>Manga</series_type>\n`;
+      xml += `    <series_chapters>${item.totalUnits || 0}</series_chapters>\n`;
+      xml += `    <my_id>${index}</my_id>\n`;
+      xml += `    <my_read_chapters>${item.progress || 0}</my_read_chapters>\n`;
+      xml += `    <my_score>${item.rating || 0}</my_score>\n`;
+      xml += `    <my_status><![CDATA[${item.status === "current" ? "Reading" : item.status === "completed" ? "Completed" : item.status === "planning" ? "Plan to Read" : item.status === "paused" ? "On-Hold" : "Dropped"}]]></my_status>\n`;
+      xml += `    <my_comments><![CDATA[${item.notes || ""}]]></my_comments>\n`;
+      xml += `  </manga>\n`;
+    });
+
+    xml += `</myanimelist>\n`;
+
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `watchlist_mal_export_${new Date().toISOString().split("T")[0]}.xml`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (!currentUser) {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-2xl mx-auto text-center space-y-6 shadow-2xl my-8" id="profile-unauth-container">
@@ -387,7 +627,7 @@ export default function UserProfileBlock({
         <div className="space-y-2">
           <h3 className="text-xl font-black text-slate-100 tracking-tight">Access Your Sync Profile Dashboard</h3>
           <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
-            Please sign in with Google to calculate your total anime screentime, reading metrics, cinematic logs, and access structured profile achievements!
+            Please register or sign in using a secure SQLite account to calculate your total anime screentime, reading metrics, cinematic logs, and access structured profile achievements!
           </p>
         </div>
         <button
@@ -396,11 +636,13 @@ export default function UserProfileBlock({
           id="profile-unauth-login-btn"
         >
           <ShieldCheck className="w-4 h-4" />
-          Sign In with Google Account
+          Create or Sign In to Account
         </button>
       </div>
     );
   }
+
+  const isGuestMode = currentUser.uid === "guest_user";
 
   // --- COMPUTE STATISTICS ---
   
@@ -501,6 +743,33 @@ export default function UserProfileBlock({
 
   return (
     <div className="space-y-8" id="profile-block-wrapper">
+
+      {isGuestMode && (
+        <div className="bg-gradient-to-r from-amber-500/15 to-amber-600/5 border border-amber-500/25 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-center gap-4 text-left shadow-lg shadow-amber-500/5 animate-fade-in" id="profile-guest-notice">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Zap className="w-5 h-5 animate-bounce" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-slate-100 uppercase tracking-widest flex items-center gap-1.5">
+                Local-First Tracking Engine Active
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              </p>
+              <p className="text-[11px] sm:text-xs text-slate-400 leading-relaxed max-w-xl mt-0.5">
+                Your watchlist checkmarks, MyAnimeList XML transfers, and personal ratings are saved instantly to your offline database. Click to sync your list, unlock live community sections, and backup data.
+              </p>
+            </div>
+          </div>
+          <button 
+            type="button"
+            onClick={onLoginRequest}
+            className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer flex-shrink-0 shadow-lg shadow-amber-500/10"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Sync with Account
+          </button>
+        </div>
+      )}
       
       {/* PROFILE HEADER CARD */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row gap-6 items-center justify-between shadow-2xl relative overflow-hidden" id="profile-hero-card">
@@ -978,22 +1247,31 @@ export default function UserProfileBlock({
               {/* EXPORT PANEL */}
               <div className="bg-slate-950 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
                 <div className="space-y-2">
-                  <span className="text-[10px] uppercase font-bold text-amber-400 bg-amber-950/20 px-2 py-0.5 rounded border border-amber-900/30">
+                  <span className="text-[10px] uppercase font-bold text-amber-400 bg-amber-955/20 px-2 py-0.5 rounded border border-amber-900/30">
                     Backup Watchlist
                   </span>
                   <h5 className="text-sm font-black text-slate-200">Export Watches & Ratings</h5>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Download a standard, fully portable `.csv` file containing all <strong className="text-indigo-400">{watchlist.length}</strong> logged, rated, or reviewed titles. This spreadsheet matches MAL & AniList parameters, ready for any sheets program or backup utility.
+                    Download copyable backups. Standard <strong className="text-indigo-400">CSV</strong> files match spreadsheet schemas. <strong className="text-indigo-400">MAL XML</strong> backups align exactly with standard MyAnimeList formats, ready to be imported directly into MAL, AniList, or back here.
                   </p>
                 </div>
 
-                <button
-                  onClick={exportToCSV}
-                  className="w-full bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-black text-slate-100 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98"
-                >
-                  <Download className="w-4 h-4 text-emerald-400" />
-                  Download Backup (.CSV)
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                  <button
+                    onClick={exportToCSV}
+                    className="flex-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-black text-slate-100 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98"
+                  >
+                    <Download className="w-4 h-4 text-emerald-450" />
+                    Backup (.CSV)
+                  </button>
+                  <button
+                    onClick={exportToXML}
+                    className="flex-1 bg-indigo-950/45 hover:bg-indigo-900/50 border border-indigo-900/60 text-xs font-black text-indigo-300 py-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98"
+                  >
+                    <Download className="w-4 h-4 text-indigo-400" />
+                    MAL Sync (.XML)
+                  </button>
+                </div>
               </div>
 
               {/* IMPORT PANEL */}
@@ -1004,7 +1282,7 @@ export default function UserProfileBlock({
                   </span>
                   <h5 className="text-sm font-black text-slate-200 font-sans">Upload ComicK, MAL, or AniList Lists</h5>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Choose whether you want to upload a CSV file directly or paste raw tabbed/comma table lines. Our system automatically recognizes header synonyms and aligns matching statuses.
+                    Drag-and-drop a file or paste content directly. Our system accepts standard <strong className="text-indigo-400">CSV spreadsheets</strong> AND native <strong className="text-indigo-400">MyAnimeList XML backup format</strong> files.
                   </p>
                 </div>
 
@@ -1016,7 +1294,7 @@ export default function UserProfileBlock({
                       importActiveSource === "upload" ? "bg-slate-850 text-slate-200" : "text-slate-450 hover:text-slate-300"
                     }`}
                   >
-                    CSV File Drag-Drop
+                    XML / CSV File Upload
                   </button>
                   <button
                     onClick={() => { setImportActiveSource("paste"); setImportError(""); setImportSuccess(""); setParsedPreview([]); }}
@@ -1024,7 +1302,7 @@ export default function UserProfileBlock({
                       importActiveSource === "paste" ? "bg-slate-850 text-slate-200" : "text-slate-450 hover:text-slate-300"
                     }`}
                   >
-                    Paste Raw CSV
+                    Paste Raw Data
                   </button>
                 </div>
 
@@ -1059,14 +1337,14 @@ export default function UserProfileBlock({
                       <input 
                         ref={fileInputRef}
                         type="file" 
-                        accept=".csv" 
+                        accept=".csv,.xml" 
                         onChange={handleFileChange}
                         className="hidden" 
                       />
                       <Upload className="w-8 h-8 text-indigo-400 mx-auto animate-pulse" />
                       <div className="space-y-1">
-                        <p className="text-xs font-bold text-slate-200">Drag and drop your spreadsheet here</p>
-                        <p className="text-[10px] text-slate-500">or click to browse your desktop (.csv files)</p>
+                        <p className="text-xs font-bold text-slate-200">Drag and drop your backup file here</p>
+                        <p className="text-[10px] text-slate-500">or click to browse (.csv or .xml format files)</p>
                       </div>
                     </div>
                   ) : (
@@ -1074,15 +1352,15 @@ export default function UserProfileBlock({
                       <textarea
                         value={importText}
                         onChange={(e) => setImportText(e.target.value)}
-                        placeholder={`Paste CSV content here. For example:\nseries_title,my_status,my_score,my_watched_episodes\nFrieren,Completed,10,28\nInterstellar,,9,1`}
-                        className="w-full h-28 bg-slate-900 border border-slate-805 rounded-xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-600 resize-none"
+                        placeholder={`Paste CSV content here, for example:\nseries_title,my_status,my_score,my_watched_episodes\nFrieren,Completed,10,28\n\nOr paste standard MAL XML content here, for example:\n<myanimelist>\n  <anime>\n    <series_title>Frieren</series_title>\n    <my_score>10</my_score>\n  </anime>\n</myanimelist>`}
+                        className="w-full h-28 bg-slate-900 border border-slate-850 rounded-xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-600 resize-none"
                       />
                       <button
-                        onClick={() => detectAndParseCSV(importText, defaultImportType)}
+                        onClick={() => detectAndParseFileContent(importText, defaultImportType)}
                         disabled={!importText.trim()}
                         className="w-full bg-indigo-650 hover:bg-indigo-600 disabled:opacity-40 text-xs font-black text-white py-2.5 rounded-xl transition-all cursor-pointer"
                       >
-                        Parse & Map Pasted CSV
+                        Parse & Map Data
                       </button>
                     </div>
                   )}
