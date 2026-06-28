@@ -30,7 +30,8 @@ import {
   logUserOut, 
   getWatchlist, 
   saveWatchlistItem, 
-  deleteWatchlistItem 
+  deleteWatchlistItem,
+  clearAllUserData
 } from "./firebase";
 import { ActiveUser, MediaItem, WatchlistItem, WatchStatus, MediaType } from "./types";
 
@@ -177,6 +178,19 @@ export default function App() {
     }
   };
 
+  const handleClearAllUserData = async () => {
+    if (!currentUser) return;
+    try {
+      await clearAllUserData(currentUser.uid);
+      setWatchlist([]);
+      // Synchronously sign out the user to complete session and cookie purging (NIST CSF / MITRE D3FEND D3-SFP)
+      await handleLogout();
+    } catch (err) {
+      console.error("Purging all data failed:", err);
+      throw err;
+    }
+  };
+
   // Watchlist manipulation callbacks
   const handleAddToWatchlist = async (media: MediaItem, customStatus: WatchStatus = "planning") => {
     const activeUser = currentUser || {
@@ -301,7 +315,7 @@ export default function App() {
       
       {/* HEADER SECTION */}
       <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900" id="header-bar">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 md:py-0 md:h-18 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
           
           {/* Logo */}
           <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab("discover")} id="brand-logo">
@@ -318,8 +332,50 @@ export default function App() {
             </div>
           </div>
 
+          {/* --- TOP BAR ALIGNMENT SPACE SWITCHER (INTEGRAL PARADIGM SHIFT) --- */}
+          <div className="flex bg-slate-900/90 border border-slate-800 p-0.5 rounded-xl gap-0.5 shadow-inner" id="global-category-switcher">
+            <button
+              onClick={() => setGlobalCategory("all")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                globalCategory === "all" 
+                  ? "bg-slate-950 text-indigo-400 border border-indigo-900/30 shadow-md" 
+                  : "text-slate-450 hover:text-indigo-200"
+              }`}
+              id="cat-all"
+            >
+              <Globe className="w-3.5 h-3.5 text-indigo-500" />
+              <span>All Unified</span>
+            </button>
+            
+            <button
+              onClick={() => setGlobalCategory("otaku")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                globalCategory === "otaku" 
+                  ? "bg-slate-950 text-emerald-400 border border-emerald-900/30 shadow-md" 
+                  : "text-slate-450 hover:text-emerald-200"
+              }`}
+              id="cat-otaku"
+            >
+              <Tv className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Otaku Mode</span>
+            </button>
+
+            <button
+              onClick={() => setGlobalCategory("western")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                globalCategory === "western" 
+                  ? "bg-slate-950 text-pink-400 border border-pink-900/30 shadow-md" 
+                  : "text-slate-450 hover:text-pink-200"
+              }`}
+              id="cat-western"
+            >
+              <Film className="w-3.5 h-3.5 text-pink-400" />
+              <span>Western Cine</span>
+            </button>
+          </div>
+
           {/* User Auth Info block */}
-          <div className="flex items-center gap-3" id="auth-controls">
+          <div className="flex items-center justify-between md:justify-end gap-3" id="auth-controls">
             {isAuthLoading ? (
               <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
             ) : currentUser ? (
@@ -447,53 +503,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- INTEGRAL UNIFIED SEPARATION TOGGLE (Otaku Realm vs Western Media) --- */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 flex flex-col items-center justify-center gap-3">
-        <span className="text-[10px] font-black text-indigo-400 tracking-widest uppercase">
-          Choose Media Tracker Alignment Space
-        </span>
-        
-        <div className="bg-slate-900 border border-slate-800 p-1 rounded-2xl flex gap-1 shadow-lg" id="global-category-switcher">
-          <button
-            onClick={() => setGlobalCategory("all")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              globalCategory === "all" 
-                ? "bg-slate-950 text-indigo-400 border border-indigo-900/30" 
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            id="cat-all"
-          >
-            <Globe className="w-4 h-4 text-indigo-500" />
-            All Unified Library
-          </button>
-          
-          <button
-            onClick={() => setGlobalCategory("otaku")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              globalCategory === "otaku" 
-                ? "bg-slate-950 text-emerald-400 border border-emerald-900/30" 
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            id="cat-otaku"
-          >
-            <Tv className="w-4 h-4 text-emerald-400" />
-            Otaku Mode Only (Anime & Manga)
-          </button>
 
-          <button
-            onClick={() => setGlobalCategory("western")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              globalCategory === "western" 
-                ? "bg-slate-950 text-pink-400 border border-pink-900/30" 
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            id="cat-western"
-          >
-            <Film className="w-4 h-4 text-pink-400" />
-            Western Cinema Only (Movies & TV)
-          </button>
-        </div>
-      </div>
 
       {/* DETAILED CONTENT AREA */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 flex-1 flex flex-col gap-8">
@@ -683,6 +693,7 @@ export default function App() {
                   onOpenDetails={(item) => setSelectedMediaDetail(item)}
                   onLoginRequest={handleLogin}
                   onImportItems={handleImportWatchlist}
+                  onClearAllData={handleClearAllUserData}
                 />
               </motion.div>
             )}
@@ -703,6 +714,9 @@ export default function App() {
               (item) => item.mediaId === selectedMediaDetail.mediaId && item.mediaType === selectedMediaDetail.mediaType
             )}
             onOpenDetails={(item) => setSelectedMediaDetail(item)}
+            watchlist={watchlist}
+            onUpdateWatchItem={handleUpdateWatchItem}
+            onDeleteWatchItem={handleDeleteWatchItem}
           />
         )}
       </AnimatePresence>

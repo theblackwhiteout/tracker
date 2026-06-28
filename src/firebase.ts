@@ -217,3 +217,42 @@ export async function likeReview(reviewId: string): Promise<void> {
     handleFirestoreError(error, OperationType.WRITE, `reviews/${reviewId}`);
   }
 }
+
+// 6. Cyber-Defensive Purging & State Reset (NIST CSF Recover / MITRE D3FEND Session Purge)
+export async function clearAllUserData(userId: string): Promise<void> {
+  if (userId && userId !== "guest_user") {
+    // 1. Clear Watchlist from Firestore
+    try {
+      const qWatchlist = query(collection(db, "watchlist"), where("userId", "==", userId));
+      const querySnapshotWatchlist = await getDocs(qWatchlist);
+      const deletePromises: Promise<void>[] = [];
+      querySnapshotWatchlist.forEach((docSnap) => {
+        deletePromises.push(deleteDoc(doc(db, "watchlist", docSnap.id)));
+      });
+      await Promise.all(deletePromises);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `watchlist_bulk_purge/${userId}`);
+    }
+
+    // 2. Clear reviews written by this user from Firestore
+    try {
+      const qReviews = query(collection(db, "reviews"), where("userId", "==", userId));
+      const querySnapshotReviews = await getDocs(qReviews);
+      const deletePromises: Promise<void>[] = [];
+      querySnapshotReviews.forEach((docSnap) => {
+        deletePromises.push(deleteDoc(doc(db, "reviews", docSnap.id)));
+      });
+      await Promise.all(deletePromises);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `reviews_bulk_purge/${userId}`);
+    }
+  }
+
+  // Always purge local storage
+  try {
+    localStorage.removeItem(STORAGE_PREFIX + "watchlist");
+  } catch (err) {
+    console.error("Local storage purge failed:", err);
+  }
+}
+

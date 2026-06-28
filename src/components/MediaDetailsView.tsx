@@ -16,9 +16,10 @@ import {
   Sparkles, 
   MessageCircle,
   Clock,
-  Flame
+  Flame,
+  Trash2
 } from "lucide-react";
-import { MediaType, MediaItem, WatchStatus } from "../types";
+import { MediaType, MediaItem, WatchStatus, WatchlistItem } from "../types";
 
 export interface DetailedMedia {
   mediaId: string;
@@ -61,14 +62,31 @@ interface MediaDetailsViewProps {
   onAddToWatchlist: (item: MediaItem, status: WatchStatus) => void;
   isInWatchlist: boolean;
   onOpenDetails?: (item: MediaItem) => void;
+  watchlist?: WatchlistItem[];
+  onUpdateWatchItem?: (item: WatchlistItem) => void;
+  onDeleteWatchItem?: (id: string) => void;
 }
 
-export default function MediaDetailsView({ media, onClose, onAddToWatchlist, isInWatchlist, onOpenDetails }: MediaDetailsViewProps) {
+export default function MediaDetailsView({ 
+  media, 
+  onClose, 
+  onAddToWatchlist, 
+  isInWatchlist, 
+  onOpenDetails,
+  watchlist,
+  onUpdateWatchItem,
+  onDeleteWatchItem
+}: MediaDetailsViewProps) {
   const [details, setDetails] = useState<DetailedMedia | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isExpandingRecommendation, setIsExpandingRecommendation] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "cast" | "trivia">("overview");
+  const [selectedStatus, setSelectedStatus] = useState<WatchStatus>("planning");
+
+  const watchlistItem = watchlist?.find(
+    (item) => item.mediaId === media.mediaId && item.mediaType === media.mediaType
+  );
 
   useEffect(() => {
     async function loadDetails() {
@@ -287,32 +305,92 @@ export default function MediaDetailsView({ media, onClose, onAddToWatchlist, isI
                 </a>
 
                 {/* Tracker Quick Action */}
-                {isInWatchlist ? (
-                  <div className="bg-slate-950/50 text-slate-500 border border-slate-850 py-2.5 px-4 text-xs font-bold text-center rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed">
-                    <Check className="w-4 h-4 text-emerald-500" />
-                    Currently Tracking
+                {isInWatchlist && watchlistItem ? (
+                  <div className="bg-slate-950/60 border border-indigo-900/10 p-3 rounded-2xl space-y-3" id="details-tracking-controls">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="text-[11px] font-black text-slate-200">Currently Tracked</span>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                        Watch Status:
+                      </label>
+                      <select
+                        value={watchlistItem.status}
+                        onChange={(e) => {
+                          if (onUpdateWatchItem) {
+                            onUpdateWatchItem({
+                              ...watchlistItem,
+                              status: e.target.value as WatchStatus
+                            });
+                          }
+                        }}
+                        className="w-full text-xs bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-2 focus:border-indigo-500 focus:outline-none font-bold cursor-pointer"
+                        id="details-status-update"
+                      >
+                        <option value="planning">Plan to Watch/Read</option>
+                        <option value="current">Watching / Reading</option>
+                        <option value="completed">Completed</option>
+                        <option value="paused">On Hold</option>
+                        <option value="dropped">Dropped</option>
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (onDeleteWatchItem) {
+                          onDeleteWatchItem(watchlistItem.id);
+                        }
+                      }}
+                      className="w-full bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/30 text-rose-200 py-2.5 px-4 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      id="details-untrack-btn"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      Untrack / Remove
+                    </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => {
-                      onAddToWatchlist({
-                        mediaId: media.mediaId,
-                        title: media.title,
-                        mediaType: media.mediaType,
-                        coverImage: media.coverImage,
-                        description: media.description || "",
-                        genres: media.genres || [],
-                        totalUnits: 0,
-                        year: media.year || 0,
-                        rating: media.rating || 0
-                      }, "planning");
-                    }}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-slate-100 py-2.5 px-4 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-indigo-650/10"
-                    id="add-from-details-btn"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add to Watchlist
-                  </button>
+                  <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-2xl space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                        Track Status:
+                      </label>
+                      <select
+                        value={selectedStatus}
+                        onChange={(e) => setSelectedStatus(e.target.value as WatchStatus)}
+                        className="w-full text-xs bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-2 focus:border-indigo-500 focus:outline-none font-bold cursor-pointer"
+                        id="details-status-before-add"
+                      >
+                        <option value="planning">Plan to Watch/Read</option>
+                        <option value="current">Watching / Reading</option>
+                        <option value="completed">Completed</option>
+                        <option value="paused">On Hold</option>
+                        <option value="dropped">Dropped</option>
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        onAddToWatchlist({
+                          mediaId: media.mediaId,
+                          title: media.title,
+                          mediaType: media.mediaType,
+                          coverImage: media.coverImage,
+                          description: media.description || "",
+                          genres: media.genres || [],
+                          totalUnits: 0,
+                          year: media.year || 0,
+                          rating: media.rating || 0
+                        }, selectedStatus);
+                      }}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-slate-100 py-2.5 px-4 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-indigo-650/10"
+                      id="add-from-details-btn"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add to Watchlist
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
